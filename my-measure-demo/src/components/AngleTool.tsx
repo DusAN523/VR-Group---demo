@@ -1,10 +1,11 @@
-import React, { useEffect } from "react";
-import { Draw } from "ol/interaction";
-import { LineString } from "ol/geom";
+import React, { useEffect, useRef } from "react";
+import { Draw, Modify } from "ol/interaction";
+import VectorSource from "ol/source/Vector";
 import { Map } from "ol";
+import { Feature } from "ol";
+import { LineString } from "ol/geom";
 import { calculateAngle } from "../utils/geometryUtils";
 import { Style, Stroke, Circle as CircleStyle, Fill } from "ol/style";
-import VectorSource from "ol/source/Vector";
 
 type Props = {
     map: Map;
@@ -14,9 +15,9 @@ type Props = {
 };
 
 const AngleTool: React.FC<Props> = ({ map, source, onAngleMeasure, unit }) => {
-    useEffect(() => {
-        let tempLines: LineString[] = [];
+    const featuresRef = useRef<Feature<LineString>[]>([]);
 
+    useEffect(() => {
         const draw = new Draw({
             source,
             type: "LineString",
@@ -37,18 +38,39 @@ const AngleTool: React.FC<Props> = ({ map, source, onAngleMeasure, unit }) => {
         map.addInteraction(draw);
 
         draw.on("drawend", (event) => {
-            const line = event.feature.getGeometry() as LineString;
-            tempLines.push(line);
-            if (tempLines.length === 2) {
-                const angleDeg = calculateAngle(tempLines[0], tempLines[1]);
+            const feature = event.feature as Feature<LineString>;
+            featuresRef.current.push(feature);
+
+            if (featuresRef.current.length === 2) {
+                const [f1, f2] = featuresRef.current;
+                const angleDeg = calculateAngle(
+                    f1.getGeometry()!,
+                    f2.getGeometry()!, unit
+                );
                 const angle = unit === "rad" ? (angleDeg * Math.PI) / 180 : angleDeg;
                 onAngleMeasure(angle);
-                tempLines = []; // reset after angle calculated
             }
         });
 
+        const modify = new Modify({ source });
+
+        modify.on("modifyend", () => {
+            if (featuresRef.current.length === 2) {
+                const [f1, f2] = featuresRef.current;
+                const angleDeg = calculateAngle(
+                    f1.getGeometry()!,
+                    f2.getGeometry()!, unit
+                );
+                const angle = unit === "rad" ? (angleDeg * Math.PI) / 180 : angleDeg;
+                onAngleMeasure(angle);
+            }
+        });
+
+        map.addInteraction(modify);
+
         return () => {
             map.removeInteraction(draw);
+            map.removeInteraction(modify);
         };
     }, [map, source, unit, onAngleMeasure]);
 
